@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Árbol Genealógico Ecológico</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Home View -->
+        <div id="home-view" class="view active">
+            <div class="background-leaves">
+                <div class="leaf leaf-1"></div>
+                <div class="leaf leaf-2"></div>
+                <div class="leaf leaf-3"></div>
+                <div class="leaf leaf-4"></div>
+                <div class="leaf leaf-5"></div>
+            </div>
+
+            <div class="tree-silhouette">
+                <svg class="tree-svg" viewBox="0 0 400 600">
+                    <path d="M200 550 L200 400 M200 400 L150 350 M200 400 L250 350 M150 350 L120 320 M150 350 L180 320 M250 350 L220 320 M250 350 L280 320 M200 400 L170 370 M200 400 L230 370" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <circle cx="120" cy="320" r="30" fill="currentColor" opacity="0.4"/>
+                    <circle cx="180" cy="320" r="35" fill="currentColor" opacity="0.4"/>
+                    <circle cx="220" cy="320" r="32" fill="currentColor" opacity="0.4"/>
+                    <circle cx="280" cy="320" r="28" fill="currentColor" opacity="0.4"/>
+                    <circle cx="170" cy="370" r="25" fill="currentColor" opacity="0.4"/>
+                    <circle cx="230" cy="370" r="25" fill="currentColor" opacity="0.4"/>
+                    <circle cx="200" cy="280" r="40" fill="currentColor" opacity="0.5"/>
+                </svg>
+            </div>
+
+            <div class="home-content">
+                <div class="tree-icon">🌳</div>
+                <h1>Árbol Genealógico</h1>
+                <p>Preserva la historia de tu familia creando hermosos árboles genealógicos. Conecta personas, establece relaciones y visualiza tu legado familiar.</p>
+                
+                <div class="home-buttons">
+                    <button class="btn btn-primary" onclick="showView('people')">
+                        👥 Gestionar Personas
+                    </button>
+                    <button class="btn btn-secondary" onclick="showView('trees')">
+                        🌳 Mis Árboles
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation (hidden on home) -->
+        <nav id="navigation" class="navigation hidden">
+            <button class="nav-btn" onclick="showView('home')">
+                🌳 Inicio
+            </button>
+            <div class="nav-buttons">
+                <button class="nav-btn" onclick="showView('people')">👥 Personas</button>
+                <button class="nav-btn" onclick="showView('trees')">🌳 Árboles</button>
+                <button class="nav-btn" onclick="showView('relationships')">❤️ Relaciones</button>
+            </div>
+        </nav>
+
+        <!-- People View -->
+        <div id="people-view" class="view">
+            <div class="view-header">
+                <h2>Gestión de Personas</h2>
+                <div class="header-actions">
+                    <div class="search-container">
+                        <input type="text" id="search-people" class="input search-input" placeholder="Buscar personas...">
+                    </div>
+                    <button class="btn btn-primary" onclick="openPersonDialog()">
+                        ➕ Agregar Persona
+                    </button>
+                </div>
+            </div>
+            <div id="people-grid" class="people-grid"></div>
+        </div>
+
+        <!-- Trees View -->
+        <div id="trees-view" class="view">
+            <div class="view-header">
+                <h2>Mis Árboles Familiares</h2>
+                <div class="header-actions">
+                    <input type="text" id="new-tree-name" class="input" placeholder="Nombre del nuevo árbol">
+                    <button class="btn btn-primary" onclick="createNewTree()">
+                        ➕ Crear Árbol
+                    </button>
+                </div>
+            </div>
+            <div id="trees-grid" class="trees-grid"></div>
+        </div>
+
+        <!-- Relationships View -->
+        <div id="relationships-view" class="view">
+            <div class="view-header">
+                <h2>Gestión de Relaciones</h2>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openRelationshipDialog()">
+                        ➕ Agregar Relación
+                    </button>
+                </div>
+            </div>
+            <div id="relationships-content" class="relationships-content"></div>
+        </div>
+
+        <!-- Tree View -->
+        <div id="tree-view-view" class="view">
+            <div class="view-header">
+                <h2 id="tree-title">Árbol Familiar</h2>
+                <div class="header-actions">
+                    <button class="btn btn-ghost" onclick="showView('trees')">
+                        Volver a Árboles
+                    </button>
+                </div>
+            </div>
+            <div id="tree-visualization" class="tree-visualization"></div>
+        </div>
+    </div>
+
+    <!-- Person Dialog -->
+    <div id="person-dialog" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="person-dialog-title">Agregar Nueva Persona</h3>
+                <button class="close-btn" onclick="closePersonDialog()">✕</button>
+            </div>
+            <form id="person-form" class="form">
+                <div class="form-group">
+                    <label for="person-name">Nombre completo</label>
+                    <input type="text" id="person-name" class="input" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="person-birth-date">Fecha de nacimiento</label>
+                        <input type="date" id="person-birth-date" class="input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="person-death-date">Fecha de fallecimiento</label>
+                        <input type="date" id="person-death-date" class="input">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="person-birth-place">Lugar de nacimiento</label>
+                    <input type="text" id="person-birth-place" class="input" required>
+                </div>
+                <div class="form-group">
+                    <label for="person-gender">Género</label>
+                    <select id="person-gender" class="select">
+                        <option value="male">Masculino</option>
+                        <option value="female">Femenino</option>
+                        <option value="other">Otro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="person-notes">Notas adicionales</label>
+                    <textarea id="person-notes" class="textarea" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Guardar Persona</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Relationship Dialog -->
+    <div id="relationship-dialog" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Agregar Nueva Relación</h3>
+                <button class="close-btn" onclick="closeRelationshipDialog()">✕</button>
+            </div>
+            <form id="relationship-form" class="form">
+                <div class="form-group">
+                    <label for="rel-tree">Árbol familiar</label>
+                    <select id="rel-tree" class="select">
+                        <option value="">Selecciona un árbol</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="rel-type">Tipo de relación</label>
+                    <select id="rel-type" class="select" onchange="updateRoleOptions()">
+                        <option value="parent-child">Padre/Madre - Hijo/Hija</option>
+                        <option value="spouse">Esposo/Esposa</option>
+                        <option value="sibling">Hermanos</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="rel-person1">Primera persona</label>
+                        <select id="rel-person1" class="select">
+                            <option value="">Selecciona persona</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="rel-person1-role">Su rol</label>
+                        <select id="rel-person1-role" class="select">
+                            <option value="">Rol</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="rel-person2">Segunda persona</label>
+                        <select id="rel-person2" class="select">
+                            <option value="">Selecciona persona</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="rel-person2-role">Su rol</label>
+                        <select id="rel-person2-role" class="select">
+                            <option value="">Rol</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Agregar Relación</button>
+            </form>
+        </div>
+    </div>
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
