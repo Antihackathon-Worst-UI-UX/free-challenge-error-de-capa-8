@@ -4,6 +4,8 @@ let trees = []
 let allPeople = []
 let currentTree = null
 let editingPerson = null
+let skipHomeTutorialOnce = true; // no mostrar la primera vez
+
 
 // ====== Alta de persona en modo "asistente paso a paso" ======
 let createWizard = null; // estado del asistente
@@ -188,6 +190,33 @@ function showRunawayConfirm({ title="Confirmación", text="", confirmText="Sí",
     const cleanup = ()=>{ document.removeEventListener('keydown', escBlocker, true); overlay.remove(); };
     btnOK.addEventListener('click', ()=>{ cleanup(); resolve(true);  });
     btnCancel.addEventListener('click', ()=>{ cleanup(); resolve(false); });
+  });
+}
+
+/* ===== Popup informativo (OK bloqueante) ===== */
+function showInfoModal({ title="Aviso", text=".", okText="Entendido" }){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'info-overlay';
+    overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
+    const escBlocker = (e)=>{ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } };
+    document.addEventListener('keydown', escBlocker, true);
+    overlay.addEventListener('click',(e)=>{ if (e.target===overlay){ e.stopPropagation(); } }, true);
+
+    const box = document.createElement('div'); box.className='info-window';
+    const h = document.createElement('div'); h.className='info-title'; h.textContent = title;
+    const p = document.createElement('div'); p.className='info-text'; p.textContent = text;
+    const actions = document.createElement('div'); actions.className='info-actions';
+    const btn = document.createElement('button'); btn.className='info-btn primary'; btn.textContent = okText;
+
+    actions.appendChild(btn); box.appendChild(h); box.appendChild(p); box.appendChild(actions);
+    overlay.appendChild(box); document.body.appendChild(overlay);
+
+    btn.addEventListener('click', ()=>{
+      document.removeEventListener('keydown', escBlocker, true);
+      overlay.remove();
+      resolve(true);
+    });
   });
 }
 
@@ -405,25 +434,35 @@ function showPetPrompt(userInitiated){
 }
 
 
-function startCreatePersonWizard() {
-  // Estado inicial
+
+
+function startCreatePersonWizard(initialPerson = null) {
+  // Guardar referencia de edición para savePerson()
+  editingPerson = initialPerson || null;
+
   createWizard = {
     step: 0,
+    isEdit: !!initialPerson,
+    initial: initialPerson, // para reiniciar en edición
     data: {
-      name: "",
-      birthDate: "",     // "dd-mm-aaaa"
-      alive: true,       // true = vivo/a (sin fecha de muerte)
-      deathDate: "",     // "dd-mm-aaaa" si alive = false
-      birthPlace: "",
-      gender: "male",    // "male" | "female" | "other"
-      notes: ""
+      name: initialPerson?.name || "",
+      birthDate: initialPerson?.birthDate || "", // "dd-mm-aaaa"
+      alive: initialPerson ? !initialPerson.deathDate : true,
+      deathDate: initialPerson?.deathDate || "",
+      birthPlace: initialPerson?.birthPlace || "",
+      gender: initialPerson?.gender || "male",
+      notes: initialPerson?.notes || ""
     }
   };
 
   const form = document.getElementById("person-form");
-  // Limpiamos el contenido del formulario y dejamos un contenedor del wizard
   form.innerHTML = `<div id="wizard"></div>`;
   renderWizardStep();
+}
+
+function resetCreateWizard() {
+  // Reinicia con el mismo modo (crear / editar) y, si está editando, con los datos iniciales de la persona
+  startCreatePersonWizard(createWizard?.isEdit ? createWizard.initial : null);
 }
 
 function renderWizardStep() {
@@ -432,7 +471,6 @@ function renderWizardStep() {
   const wiz = document.getElementById("wizard");
   if (!wiz) return;
 
-  // Helpers de UI
   const nav = (hasBack, nextLabel, onNextId="wiz-next", onBackId="wiz-back") => `
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
       ${hasBack ? `<button type="button" id="${onBackId}" class="btn btn-ghost">Anterior</button>` : ""}
@@ -440,102 +478,155 @@ function renderWizardStep() {
     </div>
   `;
 
-  // Paso actual
+  // Paso 0: Nombre
   if (w.step === 0) {
+    const val = w.isEdit ? w.data.name : "Ej: María Pérez Soto";
     wiz.innerHTML = `
-      <h3 style="margin:0 0 8px;">Agregar Nueva Persona</h3>
+      <h3 style="margin:0 0 8px;">${w.isEdit ? "Editar Persona" : "Agregar Nueva Persona"}</h3>
       <label>Nombre completo</label>
-      <input id="wiz-name" type="text" value="Ej: María Pérez Soto" style="width:100%; margin-top:6px;">
+      <input id="wiz-name" type="text" value="${val.replace(/"/g,'&quot;')}" style="width:100%; margin-top:6px;">
       ${nav(false, "Siguiente")}
     `;
     document.getElementById("wiz-next").onclick = () => {
       const v = document.getElementById("wiz-name").value.trim();
-      if (!v) return alert("Ingrese el nombre completo, por favor.");
+      if (!v) return showInfoModal({title:"Campo requerido", text:"Ingrese el nombre completo."});
       w.data.name = v;
       w.step = 1; renderWizardStep();
     };
     return;
   }
 
+  // Paso 1: Fecha de nacimiento (reloj)
   if (w.step === 1) {
     wiz.innerHTML = `
       <h3 style="margin:0 0 8px;">Fecha de nacimiento</h3>
-      <small>Formato: dd-mm-aaaa</small>
-      <input id="wiz-birth" type="text" value="dd-mm-aaaa" style="width:100%; margin-top:6px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <div id="wiz-birth-read" class="dc-readout">${w.data.birthDate || "dd-mm-aaaa"}</div>
+        <button type="button" id="wiz-birth-pick" class="btn">Elegir con reloj</button>
+      </div>
+      <small>Debe ser una fecha pasada o de hoy.</small>
       ${nav(true, "Siguiente")}
     `;
+    let pickedBirth = w.data.birthDate || null;
+
+    document.getElementById("wiz-birth-pick").onclick = async () => {
+      const today = new Date();
+      const res = await showClockDatePicker({
+        title: "Fecha de nacimiento",
+        minYear: 1800,
+        maxYear: today.getFullYear(),
+        initial: pickedBirth || null
+      });
+      if (res) {
+        pickedBirth = res;
+        document.getElementById("wiz-birth-read").textContent = res;
+      }
+    };
+
     document.getElementById("wiz-back").onclick = () => { w.step = 0; renderWizardStep(); };
-    document.getElementById("wiz-next").onclick = () => {
-      const v = document.getElementById("wiz-birth").value.trim();
-      if (!isValidDMY(v)) return alert("Formato de fecha inválido. Use dd-mm-aaaa.");
-      const d = parseDMY(v);
+    document.getElementById("wiz-next").onclick = async () => {
+      if (!pickedBirth) return showInfoModal({title:"Seleccione fecha", text:"Elija la fecha de nacimiento con el reloj."});
+      if (!isValidDMY(pickedBirth)) return showInfoModal({title:"Fecha inválida", text:"Formato esperado dd-mm-aaaa."});
+      const d = parseDMY(pickedBirth);
       const today = new Date(); today.setHours(0,0,0,0);
       if (d.getTime() > today.getTime()) {
-        alert("No puede agregar personas que aún no han nacido. El proceso se reiniciará.");
+        await showInfoModal({title:"No permitido", text:"No puede agregar personas que aún no han nacido. El proceso se reiniciará."});
         return resetCreateWizard();
       }
-      w.data.birthDate = v;
+      w.data.birthDate = pickedBirth;
       w.step = 2; renderWizardStep();
     };
     return;
   }
 
+  // Paso 2: Fallecimiento (reloj + "Vivo/a")
   if (w.step === 2) {
     wiz.innerHTML = `
       <h3 style="margin:0 0 8px;">Fecha de fallecimiento</h3>
-      <small>Formato: dd-mm-aaaa</small>
       <div style="margin:8px 0;">
         <label style="display:flex; align-items:center; gap:8px;">
-          <input id="wiz-alive" type="checkbox" checked> Vivo/a aún
+          <input id="wiz-alive" type="checkbox" ${w.data.alive ? "checked" : ""}> Vivo/a aún
         </label>
       </div>
-      <input id="wiz-death" type="text" value="dd-mm-aaaa" style="width:100%; margin-top:6px;" disabled>
+
+      <div id="wiz-death-row" style="display:${w.data.alive ? "none" : "flex"}; gap:8px; align-items:center; flex-wrap:wrap;">
+        <div id="wiz-death-read" class="dc-readout">${w.data.deathDate || "dd-mm-aaaa"}</div>
+        <button type="button" id="wiz-death-pick" class="btn">Elegir con reloj</button>
+      </div>
+      <small>Debe ser posterior al nacimiento y no puede estar en el futuro.</small>
+
       ${nav(true, "Siguiente")}
     `;
+
     const aliveCb = document.getElementById("wiz-alive");
-    const deathInput = document.getElementById("wiz-death");
-    aliveCb.onchange = () => {
-      deathInput.disabled = aliveCb.checked;
-      if (aliveCb.checked && !deathInput.disabled) deathInput.value = "dd-mm-aaaa";
+    const row = document.getElementById("wiz-death-row");
+    let pickedDeath = w.data.deathDate || null;
+
+    aliveCb.onchange = () => { row.style.display = aliveCb.checked ? "none" : "flex"; };
+
+    const birth = parseDMY(w.data.birthDate);
+    document.getElementById("wiz-death-pick").onclick = async () => {
+      const res = await showClockDatePicker({
+        title: "Fecha de fallecimiento",
+        minYear: 1800,
+        maxYear: (new Date()).getFullYear() + 100, // selector amplio, validamos luego
+        initial: pickedDeath || null
+      });
+      if (res) {
+        pickedDeath = res;
+        document.getElementById("wiz-death-read").textContent = res;
+      }
     };
+
     document.getElementById("wiz-back").onclick = () => { w.step = 1; renderWizardStep(); };
-    document.getElementById("wiz-next").onclick = () => {
-      const alive = document.getElementById("wiz-alive").checked;
+    document.getElementById("wiz-next").onclick = async () => {
+      const alive = aliveCb.checked;
       w.data.alive = alive;
-      const birth = parseDMY(w.data.birthDate);
+
       if (!alive) {
-        const dv = deathInput.value.trim();
-        if (!isValidDMY(dv)) return alert("Ingrese fecha de fallecimiento válida (dd-mm-aaaa) o marque Vivo/a.");
-        const death = parseDMY(dv);
-        if (death.getTime() <= birth.getTime()) {
-          alert("La fecha de fallecimiento es anterior o igual a la de nacimiento. El proceso se reiniciará.");
+        if (!pickedDeath) return showInfoModal({title:"Seleccione fecha", text:"Elija la fecha de fallecimiento con el reloj."});
+        if (!isValidDMY(pickedDeath)) return showInfoModal({title:"Fecha inválida", text:"Formato esperado dd-mm-aaaa."});
+
+        const death = parseDMY(pickedDeath);
+        const today = new Date(); today.setHours(0,0,0,0);
+
+        if (death.getTime() > today.getTime()) {
+          await showInfoModal({title:"No es posible ver el futuro", text:"La fecha de fallecimiento no puede ser posterior a hoy. El proceso se reiniciará."});
           return resetCreateWizard();
         }
-        w.data.deathDate = dv;
+        if (death.getTime() <= birth.getTime()) {
+          await showInfoModal({title:"Fecha incoherente", text:"La fecha de fallecimiento es anterior o igual a la de nacimiento. El proceso se reiniciará."});
+          return resetCreateWizard();
+        }
+        w.data.deathDate = pickedDeath;
       } else {
         w.data.deathDate = "";
       }
+
       w.step = 3; renderWizardStep();
     };
     return;
   }
 
+  // Paso 3: Lugar de nacimiento
   if (w.step === 3) {
+    const val = w.isEdit ? (w.data.birthPlace || "") : "Ej: Santiago, Chile";
     wiz.innerHTML = `
       <h3 style="margin:0 0 8px;">Lugar de nacimiento</h3>
-      <input id="wiz-place" type="text" value="Ej: Santiago, Chile" style="width:100%; margin-top:6px;">
+      <input id="wiz-place" type="text" value="${val.replace(/"/g,'&quot;')}" style="width:100%; margin-top:6px;">
       ${nav(true, "Siguiente")}
     `;
     document.getElementById("wiz-back").onclick = () => { w.step = 2; renderWizardStep(); };
     document.getElementById("wiz-next").onclick = () => {
       const v = document.getElementById("wiz-place").value.trim();
-      if (!v) return alert("Ingrese el lugar de nacimiento, por favor.");
+      if (!v) return showInfoModal({title:"Campo requerido", text:"Ingrese el lugar de nacimiento."});
       w.data.birthPlace = v;
       w.step = 4; renderWizardStep();
     };
     return;
   }
 
+  // Paso 4: Género
   if (w.step === 4) {
     wiz.innerHTML = `
       <h3 style="margin:0 0 8px;">Género</h3>
@@ -554,44 +645,28 @@ function renderWizardStep() {
     return;
   }
 
+  // Paso 5: Notas + Guardar (triple confirmación)
   if (w.step === 5) {
+    const val = w.isEdit ? (w.data.notes || "") : "(Escriba sus notas aquí)";
     wiz.innerHTML = `
       <h3 style="margin:0 0 8px;">Notas adicionales</h3>
-      <textarea id="wiz-notes" rows="4" placeholder="(Opcional)" style="width:100%; margin-top:6px;"></textarea>
+      <textarea id="wiz-notes" rows="4" style="width:100%; margin-top:6px;">${val.replace(/</g,'&lt;')}</textarea>
       ${nav(true, "Guardar", "wiz-save")}
     `;
     document.getElementById("wiz-back").onclick = () => { w.step = 4; renderWizardStep(); };
-
     document.getElementById("wiz-save").onclick = async () => {
       w.data.notes = document.getElementById("wiz-notes").value;
 
-      // Triple confirmación con modal personalizado (botones que huyen)
+      // Triple confirmación con botones que huyen
       const n = w.data.name || "la persona";
-      const c1 = await showRunawayConfirm({
-        title: "Confirmación 1",
-        text: `¿Desea guardar a ${n}?`,
-        confirmText: "Sí",
-        cancelText: "No"
-      });
+      const c1 = await showRunawayConfirm({ title:"Confirmación 1", text:`¿Desea guardar a ${n}?`, confirmText:"Sí", cancelText:"No" });
       if (!c1) return;
-
-      const c2 = await showRunawayConfirm({
-        title: "Confirmación 2",
-        text: `¿Está totalmente seguro? Se creará el registro de ${n}.`,
-        confirmText: "Adelante",
-        cancelText: "Cancelar"
-      });
+      const c2 = await showRunawayConfirm({ title:"Confirmación 2", text:`¿Está totalmente seguro?`, confirmText:"Adelante", cancelText:"Cancelar" });
       if (!c2) return;
-
-      const c3 = await showRunawayConfirm({
-        title: "Última advertencia",
-        text: `Después de esto, ${n} formará parte de su historia familiar.`,
-        confirmText: "Guardar ahora",
-        cancelText: "Mejor no"
-      });
+      const c3 = await showRunawayConfirm({ title:"Última advertencia", text:`Después de esto, ${n} formará parte de su historia familiar.`, confirmText:"Guardar ahora", cancelText:"Mejor no" });
       if (!c3) return;
 
-      // Volcar en inputs ocultos compatibles con savePerson()
+      // Volcar a inputs ocultos para reutilizar savePerson()
       ensureHiddenInput("person-name", w.data.name);
       ensureHiddenInput("person-birth-date", w.data.birthDate);
       ensureHiddenInput("person-death-date", w.data.alive ? "" : w.data.deathDate);
@@ -600,11 +675,10 @@ function renderWizardStep() {
       ensureHiddenInput("person-notes", w.data.notes);
 
       // Guardar
-      savePerson(); // si hizo async savePerson(), puede usar: await savePerson();
+      await savePerson(); // su savePerson puede ser async
     };
     return;
   }
-
 }
 
 function resetCreateWizard() {
@@ -640,6 +714,200 @@ function parseDMY(str) {
   dt.setHours(0,0,0,0);
   return dt;
 }
+
+/* ===== Selector de fecha con reloj =====
+   Devuelve una promesa con "dd-mm-aaaa".
+   options: { title, minYear, maxYear, initial } */
+function showClockDatePicker(options = {}) {
+  const {
+    title = "Seleccione fecha",
+    minYear = 1800,
+    maxYear = (new Date()).getFullYear() + 100,
+    initial = null, // "dd-mm-aaaa" o null
+  } = options;
+
+  return new Promise((resolve) => {
+    // Overlay bloqueante
+    const overlay = document.createElement('div');
+    overlay.className = 'dc-overlay';
+    overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
+
+    const escBlocker = (e)=>{ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } };
+    document.addEventListener('keydown', escBlocker, true);
+    overlay.addEventListener('click',(e)=>{ if (e.target===overlay){ e.stopPropagation(); } }, true);
+
+    const win = document.createElement('div'); win.className='dc-window';
+    const h = document.createElement('div'); h.className='dc-title'; h.textContent = title;
+
+    const row = document.createElement('div'); row.className='dc-row';
+    const clock = document.createElement('div'); clock.className='dc-clock'; clock.id = 'dc-clock';
+
+    const readout = document.createElement('div'); readout.className='dc-readout'; readout.textContent = 'Fecha: —';
+    const hint = document.createElement('div'); hint.className='dc-hint';
+    hint.innerHTML = 'Seleccione la fecha.';
+    row.appendChild(clock); row.appendChild(readout); row.appendChild(hint);
+
+    const actions = document.createElement('div'); actions.className='dc-actions';
+    const btnCancel = document.createElement('button'); btnCancel.className='dc-btn'; btnCancel.textContent='Cancelar';
+    const btnOK = document.createElement('button'); btnOK.className='dc-btn primary'; btnOK.textContent='Aceptar';
+    actions.appendChild(btnCancel); actions.appendChild(btnOK);
+
+    win.appendChild(h); win.appendChild(row); win.appendChild(actions);
+    overlay.appendChild(win); document.body.appendChild(overlay);
+
+    // === Reloj ===
+    const SIZE = parseFloat(getComputedStyle(document.querySelector('.dc-clock')).width);
+    const C = SIZE / 2;
+
+    // Ticks
+    for (let i = 0; i < 60; i++) {
+      const t = document.createElement('div');
+      t.className = 'dc-tick' + (i % 5 === 0 ? ' major' : '');
+      t.style.transform = `rotate(${i*6}deg) translateY(0)`;
+      clock.appendChild(t);
+    }
+    // Etiquetas 1-12
+    for (let i = 1; i <= 12; i++) {
+      const ang = (i % 12) * 30 - 90;
+      const r = C * 0.82;
+      const x = C + r * Math.cos(ang*Math.PI/180);
+      const y = C + r * Math.sin(ang*Math.PI/180);
+      const lab = document.createElement('div');
+      lab.className = 'dc-label';
+      lab.style.left = x + 'px'; lab.style.top = y + 'px';
+      lab.textContent = i; clock.appendChild(lab);
+    }
+
+    const handHour = document.createElement('div'); handHour.className='dc-hand hour';   handHour.dataset.role='day';
+    const handMin  = document.createElement('div'); handMin.className ='dc-hand minute'; handMin.dataset.role='month';
+    const handSec  = document.createElement('div'); handSec.className ='dc-hand second'; handSec.dataset.role='year';
+    const pivot = document.createElement('div'); pivot.className='dc-center';
+    clock.appendChild(handHour); clock.appendChild(handMin); clock.appendChild(handSec); clock.appendChild(pivot);
+
+    // Estado
+    let day = 1, month = 1, decadeTurns = 0, yearInDecade = 0;
+    let angHour = 0, angMinute = 0, angSecond = 0;
+    let dragging = null, lastAngle = null;
+
+    // Utilidades
+    const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
+    const daysInMonth = (y,m)=> new Date(y, m, 0).getDate();
+
+    function setRot(el, deg){ el.style.transform = `rotate(${deg}deg)`; }
+    function angleFromEvent(e){
+      const r = clock.getBoundingClientRect();
+      const cx = r.left + r.width/2, cy = r.top + r.height/2;
+      const x = (e.touches?e.touches[0].clientX:e.clientX) - cx;
+      const y = (e.touches?e.touches[0].clientY:e.clientY) - cy;
+      let deg = Math.atan2(y,x)*180/Math.PI; deg += 90; if (deg<0) deg+=360; return deg;
+    }
+
+    function updateReadout() {
+      const span = maxYear - minYear;
+      const maxDecade = Math.floor(span / 10);
+      let y = clamp(minYear + decadeTurns*10 + yearInDecade, minYear, maxYear);
+
+      // Proyección si quedó fuera
+      if (y < minYear){ decadeTurns = 0; yearInDecade = 0; y = minYear; }
+      if (y > maxYear){
+        decadeTurns = maxDecade;
+        yearInDecade = maxYear - (minYear + decadeTurns*10);
+        y = minYear + decadeTurns*10 + yearInDecade;
+      }
+
+      // Ajuste día por mes/año
+      day = Math.min(day, daysInMonth(y, month));
+
+      readout.textContent = `Fecha: ${String(day).padStart(2,'0')}-${String(month).padStart(2,'0')}-${y}`;
+      return y;
+    }
+
+    function onPointerDown(el){ return (e)=>{ e.preventDefault(); dragging = el; lastAngle = angleFromEvent(e); el.setPointerCapture && el.setPointerCapture(e.pointerId||0); }; }
+    function onPointerMove(e){
+      if (!dragging) return;
+      const role = dragging.dataset.role;
+      const ang = angleFromEvent(e);
+
+      if (role === 'day') {
+        const step = 360/31;
+        const snapped = Math.round(ang/step)*step % 360;
+        angHour = snapped; setRot(dragging, snapped);
+        day = (Math.round(snapped/step)%31)+1;
+      } else if (role === 'month') {
+        const step = 360/12;
+        const snapped = Math.round(ang/step)*step % 360;
+        angMinute = snapped; setRot(dragging, snapped);
+        month = (Math.round(snapped/step)%12)+1;
+      } else if (role === 'year') {
+        let delta = ang - lastAngle; if (delta>180) delta-=360; if (delta<-180) delta+=360;
+        angSecond = (angSecond + delta + 360) % 360;
+
+        const la = lastAngle, na = ang;
+        if (la > 300 && na < 60) decadeTurns++;
+        if (la < 60 && na > 300) decadeTurns--;
+
+        const step = 360/10;
+        const snapped = Math.round(ang/step)*step % 360;
+        setRot(dragging, snapped);
+        yearInDecade = Math.round(snapped/step) % 10;
+
+        // Rango duro
+        const proj = minYear + decadeTurns*10 + yearInDecade;
+        const maxDecade = Math.floor((maxYear - minYear)/10);
+        if (proj < minYear){ decadeTurns = 0; yearInDecade = 0; setRot(dragging, 0); }
+        if (proj > maxYear){
+          decadeTurns = maxDecade;
+          yearInDecade = maxYear - (minYear + decadeTurns*10);
+          setRot(dragging, yearInDecade * step);
+        }
+
+        lastAngle = ang;
+      }
+      updateReadout();
+    }
+    function onPointerUp(e){ if (!dragging) return; dragging.releasePointerCapture && dragging.releasePointerCapture(e.pointerId||0); dragging=null; lastAngle=null; }
+
+    [handHour, handMin, handSec].forEach(el => el.addEventListener('pointerdown', onPointerDown(el)));
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('lostpointercapture', onPointerUp);
+
+    // Estado inicial
+    (function init(){
+      let initD = 15, initM = 6, initY = Math.max(minYear, Math.min(maxYear, (new Date()).getFullYear()));
+      if (initial && /^\d{2}-\d{2}-\d{4}$/.test(initial)){
+        const [dd,mm,yyyy] = initial.split('-').map(Number);
+        initD = dd; initM = mm; initY = clamp(yyyy, minYear, maxYear);
+      }
+      const dStep = 360/31, mStep = 360/12, yStep = 360/10;
+
+      day = initD; month = initM;
+      decadeTurns = Math.floor((initY - minYear)/10);
+      yearInDecade = (initY - minYear) % 10;
+
+      angHour = (day-1)*dStep; setRot(handHour, angHour);
+      angMinute = (month-1)*mStep; setRot(handMin, angMinute);
+      angSecond = (yearInDecade)*yStep; setRot(handSec, angSecond);
+
+      updateReadout();
+    })();
+
+    // Aceptar / Cancelar
+    btnOK.addEventListener('click', ()=>{
+      const txt = readout.textContent.replace('Fecha: ','').trim();
+      document.removeEventListener('keydown', escBlocker, true);
+      overlay.remove();
+      resolve(txt); // "dd-mm-aaaa"
+    });
+    btnCancel.addEventListener('click', ()=>{
+      document.removeEventListener('keydown', escBlocker, true);
+      overlay.remove();
+      resolve(null);
+    });
+  });
+}
+
 
 // ===== Asistente de relaciones (un campo por vez + hold confirm en cada paso) =====
 let relWizard = null;
@@ -904,6 +1172,10 @@ function positionTutorialBoxRandomly(box, margin = 16) {
 
 // Bloquea la interacción tras navegar a una vista y guía paso a paso
 function startTutorial(viewName){
+  if (viewName === "home" && skipHomeTutorialOnce) {
+    skipHomeTutorialOnce = false;
+    return;
+  }
   // Elija animal y pasos (si la vista no está en la tabla, use uno genérico)
   const steps = VIEW_TUTORIALS[viewName] || ["Sección informativa.", "Use la navegación superior para moverse por la aplicación."];
   const animal = pickAnimal();
@@ -1092,7 +1364,15 @@ function showView(viewName) {
   renderCurrentView()
 
   // === Mostrar tutorial (imposible de omitir) en cada cambio de vista ===
-  startTutorial(viewName)
+  if (viewName === "home") {
+    if (skipHomeTutorialOnce) {
+      skipHomeTutorialOnce = false; // saltar solo la PRIMERA vez
+    } else {
+      startTutorial(viewName);
+    }
+  } else {
+    startTutorial(viewName);
+  }
 }
 
 
@@ -1150,65 +1430,21 @@ function renderPeople(searchTerm = "") {
 }
 
 function openPersonDialog(person = null) {
-  editingPerson = person
-  const dialog = document.getElementById("person-dialog")
-  const title = document.getElementById("person-dialog-title")
-  const form = document.getElementById("person-form")
+  editingPerson = person || null;
+  const dialog = document.getElementById("person-dialog");
+  const title  = document.getElementById("person-dialog-title");
+  const form   = document.getElementById("person-form");
 
-  if (person) {
-    // --- Modo edición: formulario clásico (como antes) ---
-    title.textContent = "Editar Persona"
+  title.textContent = person ? "Editar Persona" : "Agregar Nueva Persona";
+  form.innerHTML = `<div id="wizard"></div>`;         // contenedor del asistente
 
-    form.innerHTML = `
-      <div class="form-grid">
-        <div class="form-field">
-          <label>Nombre completo</label>
-          <input id="person-name" type="text">
-        </div>
-        <div class="form-field">
-          <label>Fecha de nacimiento</label>
-          <input id="person-birth-date" type="text" placeholder="dd-mm-aaaa">
-        </div>
-        <div class="form-field">
-          <label>Fecha de fallecimiento</label>
-          <input id="person-death-date" type="text" placeholder="dd-mm-aaaa">
-        </div>
-        <div class="form-field">
-          <label>Lugar de nacimiento</label>
-          <input id="person-birth-place" type="text">
-        </div>
-        <div class="form-field">
-          <label>Género</label>
-          <select id="person-gender">
-            <option value="male">Masculino</option>
-            <option value="female">Femenino</option>
-            <option value="other">Otro</option>
-          </select>
-        </div>
-        <div class="form-field" style="grid-column:1/-1">
-          <label>Notas adicionales</label>
-          <textarea id="person-notes" rows="3"></textarea>
-        </div>
-        <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px;">
-          <button type="button" class="btn btn-ghost" onclick="closePersonDialog()">Cancelar</button>
-          <button type="submit" class="btn">Guardar</button>
-        </div>
-      </div>
-    `
+  // Iniciar asistente (crea/edita un campo por vez, con reloj y validaciones)
+  startCreatePersonWizard(person || null);
 
-    document.getElementById("person-name").value = person.name
-    document.getElementById("person-birth-date").value = person.birthDate
-    document.getElementById("person-death-date").value = person.deathDate || ""
-    document.getElementById("person-birth-place").value = person.birthPlace
-    document.getElementById("person-gender").value = person.gender
-    document.getElementById("person-notes").value = person.notes
-  } else {
-    // --- Modo creación: asistente paso a paso ---
-    title.textContent = "Agregar Nueva Persona"
-    startCreatePersonWizard()
-  }
+  // Evitar envíos de formulario por Enter mientras se usa el asistente
+  form.onsubmit = (e) => e.preventDefault();
 
-  dialog.classList.add("active")
+  dialog.classList.add("active");
 }
 
 function closePersonDialog() {
@@ -1237,19 +1473,21 @@ async function savePerson() {
     notes: document.getElementById("person-notes").value,
   }
 
-  // Validaciones duras también aquí por si viene de edición clásica
   if (!isValidDMY(formData.birthDate)) return alert("Fecha de nacimiento inválida (use dd-mm-aaaa).");
   const birth = parseDMY(formData.birthDate);
   const today = new Date(); today.setHours(0,0,0,0);
   if (birth.getTime() > today.getTime()) {
-    alert("No puede agregar/editar con fecha de nacimiento en el futuro. Se canceló el guardado.");
+    await showInfoModal({title:"No permitido", text:"La fecha de nacimiento no puede ser futura."});
     return;
   }
   if (formData.deathDate) {
-    if (!isValidDMY(formData.deathDate)) return alert("Fecha de fallecimiento inválida (use dd-mm-aaaa).");
     const death = parseDMY(formData.deathDate);
+    if (death.getTime() > today.getTime()) {
+      await showInfoModal({title:"No es posible ver el futuro", text:"La fecha de fallecimiento no puede ser posterior a hoy."});
+      return;
+    }
     if (death.getTime() <= birth.getTime()) {
-      alert("La fecha de fallecimiento no puede ser anterior o igual a la de nacimiento. Se canceló el guardado.");
+      await showInfoModal({title:"Fecha incoherente", text:"La fecha de fallecimiento no puede ser anterior o igual a la de nacimiento."});
       return;
     }
   }
