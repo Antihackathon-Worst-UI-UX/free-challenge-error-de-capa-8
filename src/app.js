@@ -332,7 +332,7 @@ function showPetPrompt(userInitiated){
 
   const text = document.createElement('div');
   text.className = 'pet-text';
-  text.textContent = 'Mantenga presionado sobre Poe hasta llenar la barra para poder continuar.';
+  text.textContent = 'Hágale cariño a Poe para poder continuar.';
 
   const dogArea = document.createElement('div');
   dogArea.className = 'pet-dog-area';
@@ -350,7 +350,7 @@ function showPetPrompt(userInitiated){
   const actions = document.createElement('div'); actions.className = 'pet-actions';
   const hintBtn = document.createElement('button');
   hintBtn.type = 'button'; hintBtn.className = 'btn btn-ghost';
-  hintBtn.textContent = '¿Cómo? Mantenga presionado.';
+  hintBtn.textContent = '¿Cómo? Haciéndole cariño.';
   actions.appendChild(hintBtn);
 
   box.appendChild(title);
@@ -858,30 +858,49 @@ function pickAnimal(){ return TUTORIAL_ANIMALS[Math.floor(Math.random()*TUTORIAL
 // Contenido de tutorial por vista
 const VIEW_TUTORIALS = {
   home: [
-    "Bienvenido. En la página de inicio verá atajos y el estado general de sus árboles.",
-    "Use la barra superior para ir a Personas, Árboles, Relaciones o la Vista del Árbol."
+    "Bienvenido. Esta página de árboles genealógicos permite crear árboles genealógicos.",
+    "Aprete Gestionar Personas para gestionar a las personas.",
+    "Aprete Mis Árboles para ver sus árboles."
   ],
   people: [
-    "Aquí gestiona Personas: puede crear, editar y eliminar.",
-    "Use la búsqueda para filtrar por nombre o lugar de nacimiento.",
-    "Al guardar, los datos quedan disponibles para crear relaciones y árboles."
+    "Bienvenido al menú de Personas.",
+    "Aquí puede crear personas nuevas.",
+    "También puede borrarlas en caso de un error.",
+    "Aunque en caso de un error y no querer borrarlas, puede editarlas.",
+    "También puede buscarlas si no encuentra alguna."
   ],
   trees: [
-    "En Árboles puede crear nuevos árboles genealógicos.",
-    "Cada tarjeta muestra cuántas personas y relaciones contiene.",
-    "Pulse “Ver Árbol” para abrir la visualización de ese árbol."
+    "En Árboles puede crear nuevos árboles.",
+    "También podrá ver los árboles creados.",
+    "También podrá ver las relaciones creadas dentro de cada árbol creado."
   ],
   relationships: [
-    "En Relaciones crea vínculos: padre-hijo, hermanos y esposos.",
-    "Seleccione el árbol, las dos personas y los roles según el tipo.",
-    "Al guardar, la relación aparecerá también en la vista del árbol."
+    "En Relaciones verá las relaciones.",
+    "Podrá ver las relaciones para cada árbol creado.",
+    "Naturalmente, también podrá crear una relación."
   ],
   "tree-view": [
     "Esta es la Visualización del Árbol.",
-    "Los colores indican género; las líneas verdes son padre-hijo, rojas esposos y azules hermanos.",
-    "Sitúe el cursor sobre un nodo para ver detalles; use la navegación para cambiar de vista."
+    "Los colores indican género y el tipo de relación",
+    "Para las relaciones, el color será verde ceniza (pictórico) para los padre/madre - hijo/hija. Para los hermanos, será Verde Hooker Nº1. Finalmente, el color será Sinople o Verde estándar para esposos/esposas."
   ]
 };
+
+function positionTutorialBoxRandomly(box, margin = 16) {
+  // Asegurar medidas reales (ya en DOM)
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const rect = box.getBoundingClientRect();
+
+  const maxLeft = Math.max(margin, vw - rect.width  - margin);
+  const maxTop  = Math.max(margin, vh - rect.height - margin);
+
+  const left = Math.floor(Math.random() * maxLeft);
+  const top  = Math.floor(Math.random() * maxTop);
+
+  box.style.left = left + "px";
+  box.style.top  = top  + "px";
+}
 
 // Bloquea la interacción tras navegar a una vista y guía paso a paso
 function startTutorial(viewName){
@@ -948,6 +967,8 @@ function startTutorial(viewName){
   box.appendChild(actions);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
+  positionTutorialBoxRandomly(box);
+
 
   // Siguiente paso
   btnNext.addEventListener("click", () => {
@@ -956,6 +977,7 @@ function startTutorial(viewName){
       text.textContent = steps[idx];
       dotRefs.forEach((d,i)=>d.classList.toggle("active", i===idx));
       if (idx === steps.length - 1) btnNext.textContent = "Finalizar";
+      positionTutorialBoxRandomly(box);
     } else {
       // Cerrar tutorial (completado)
       document.removeEventListener("keydown", escBlocker, true);
@@ -1680,11 +1702,11 @@ function renderTreeView() {
                     <span>Padre-Hijo</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-line" style="background: #dc2626;"></div>
+                    <div class="legend-line" style="background: #10b981;"></div>
                     <span>Esposos</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-line" style="background: #2563eb;"></div>
+                    <div class="legend-line" style="background: #16a34a;"></div>
                     <span>Hermanos</span>
                 </div>
                 <div class="legend-item">
@@ -1692,7 +1714,7 @@ function renderTreeView() {
                     <span>Hombres</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-shape legend-circle" style="background: #f97316; border-color: #ea580c;"></div>
+                    <div class="legend-shape" style="background: #20ac53ff; border-color: #16a34a;"></div>
                     <span>Mujeres</span>
                 </div>
             </div>
@@ -1873,7 +1895,7 @@ function drawRelationships(svg, layout) {
     line.setAttribute("y1", person1.y)
     line.setAttribute("x2", person2.x - 20)
     line.setAttribute("y2", person2.y)
-    line.setAttribute("stroke", "#dc2626")
+    line.setAttribute("stroke", "#10b981")
     line.setAttribute("stroke-width", "4")
     line.setAttribute("opacity", "0.9")
     svg.appendChild(line)
@@ -1891,7 +1913,7 @@ function drawRelationships(svg, layout) {
     line.setAttribute("y1", person1.y - 30)
     line.setAttribute("x2", person2.x - 20)
     line.setAttribute("y2", person2.y - 30)
-    line.setAttribute("stroke", "#2563eb")
+    line.setAttribute("stroke", "#16a34a")
     line.setAttribute("stroke-width", "3")
     line.setAttribute("opacity", "0.8")
     svg.appendChild(line)
@@ -1905,7 +1927,7 @@ function drawPersonNodes(svg, layout) {
 
     const colors = {
       male: { fill: "#22c55e", stroke: "#16a34a" },
-      female: { fill: "#f97316", stroke: "#ea580c" },
+      female: { fill: "#16a34a", stroke: "#22c55e" },
       other: { fill: "#8b5cf6", stroke: "#7c3aed" },
     }
 
@@ -1930,21 +1952,23 @@ function drawPersonNodes(svg, layout) {
 
       svg.appendChild(rect)
     } else {
-      // Circle for females
-      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-      circle.setAttribute("cx", pos.x)
-      circle.setAttribute("cy", pos.y)
-      circle.setAttribute("r", "20")
-      circle.setAttribute("fill", color.fill)
-      circle.setAttribute("stroke", color.stroke)
-      circle.setAttribute("stroke-width", "3")
-      circle.setAttribute("opacity", "0.9")
-      circle.style.cursor = "pointer"
+      // Square for females
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect")
+      rect.setAttribute("x", pos.x - 18)
+      rect.setAttribute("y", pos.y - 18)
+      rect.setAttribute("width", "36")
+      rect.setAttribute("height", "36")
+      rect.setAttribute("rx", "8")
+      rect.setAttribute("fill", color.fill)
+      rect.setAttribute("stroke", color.stroke)
+      rect.setAttribute("stroke-width", "3")
+      rect.setAttribute("opacity", "0.9")
+      rect.style.cursor = "pointer"
 
-      circle.addEventListener("mouseenter", (e) => showTooltip(e, person))
-      circle.addEventListener("mouseleave", hideTooltip)
+      rect.addEventListener("mouseenter", (e) => showTooltip(e, person))
+      rect.addEventListener("mouseleave", hideTooltip)
 
-      svg.appendChild(circle)
+      svg.appendChild(rect)
     }
 
     // Add leaf vein detail
