@@ -220,6 +220,136 @@ function showInfoModal({ title="Aviso", text=".", okText="Entendido" }){
   });
 }
 
+// ===== Utilidades para búsqueda inversa con teclado desordenado =====
+let peopleSearchExcluded = new Set(); // conjunto de letras/números elegidos
+
+function stripDiacritics(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function toKeyChars(s){
+  return stripDiacritics(String(s)).toLowerCase();
+}
+
+// Popup con dos opciones: "Seguir escribiendo" o "Buscar ya"
+function showTypeChoice({title="Búsqueda", text="¿Seguir escribiendo o buscar ahora?"}){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div'); overlay.className='choice-overlay';
+    const win = document.createElement('div'); win.className='choice-window';
+    const h = document.createElement('div'); h.className='choice-title'; h.textContent = title;
+    const p = document.createElement('div'); p.className='choice-text';  p.textContent = text;
+    const actions = document.createElement('div'); actions.className='choice-actions';
+    const bCont = document.createElement('button'); bCont.className='choice-btn'; bCont.textContent='Seguir escribiendo';
+    const bNow  = document.createElement('button'); bNow.className='choice-btn primary'; bNow.textContent='Buscar ahora';
+
+    actions.appendChild(bCont); actions.appendChild(bNow);
+    win.appendChild(h); win.appendChild(p); win.appendChild(actions);
+    overlay.appendChild(win); document.body.appendChild(overlay);
+
+    const done = (val)=>{ overlay.remove(); resolve(val); };
+    bCont.addEventListener('click', ()=>done('continue'));
+    bNow .addEventListener('click', ()=>done('search'));
+  });
+}
+
+function openScrambledKeyboard(){
+  // Construir overlay
+  const overlay = document.createElement('div'); overlay.className='kbd-overlay';
+  const win = document.createElement('div'); win.className='kbd-window';
+  const h = document.createElement('div'); h.className='kbd-title'; h.textContent = 'Buscar personas';
+  const display = document.createElement('div'); display.className='kbd-display'; display.id='kbd-display';
+  const grid = document.createElement('div'); grid.className='kbd-grid';
+  const actions = document.createElement('div'); actions.className='kbd-actions';
+  const btnClose = document.createElement('button'); btnClose.className='kbd-btn'; btnClose.textContent='Cerrar';
+
+  actions.appendChild(btnClose);
+  win.appendChild(h); win.appendChild(display); win.appendChild(grid); win.appendChild(actions);
+  overlay.appendChild(win); document.body.appendChild(overlay);
+
+  // Generar teclas A-Z (incluye Ñ) + 0-9 en orden aleatorio
+  const letters = [...'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'];
+  const digits  = [...'0123456789'];
+  const keys = [...letters, ...digits];
+
+  for (let i = keys.length - 1; i > 0; i--) { // shuffle
+    const j = Math.floor(Math.random() * (i + 1));
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+  }
+
+  let buffer = []; // lo que el usuario ha ido eligiendo (como caracteres)
+
+  function refreshDisplay(){
+    display.innerHTML = buffer.map(ch=>`<span>${ch}</span>`).join('');
+    const input = document.getElementById('search-people');
+    if (input) input.value = buffer.join(''); // para que vea lo escrito
+  }
+
+  keys.forEach(ch=>{
+    const key = document.createElement('button');
+    key.className='kbd-key'; key.type='button';
+    key.textContent = ch;
+    key.addEventListener('click', async ()=>{
+      buffer.push(ch);
+      refreshDisplay();
+
+      const res = await showTypeChoice({
+        title: `Tecla "${ch}"`,
+        text: '¿Seguir escribiendo o buscar ahora?'
+      });
+      if (res === 'search') {
+        // Aplicar filtro inverso y cerrar
+        peopleSearchExcluded = new Set(buffer.map(c=>toKeyChars(c)));
+        applyInversePeopleFilter();
+        overlay.remove();
+      }
+      // si elige "Seguir", continúa el teclado sin cerrarlo
+    });
+    grid.appendChild(key);
+  });
+
+  btnClose.addEventListener('click', ()=> overlay.remove());
+}
+
+// Devuelve true si el nombre NO contiene ninguna de las letras/números del set
+function inverseMatch(name){
+  if (!peopleSearchExcluded || peopleSearchExcluded.size === 0) return true;
+  const n = toKeyChars(name);
+  for (const ch of peopleSearchExcluded){
+    if (n.includes(ch)) return false; // contiene alguna → NO pasa
+  }
+  return true; // no contiene ninguna → sí pasa
+}
+
+// Llama a tu render y deja solo los que pasan
+function applyInversePeopleFilter(){
+  // Si tu renderPeople ya usa allPeople directamente, filtra aquí
+  const container = document.getElementById('people-grid');
+  if (!container) return;
+  // Renderiza de cero con la lista filtrada
+  const list = allPeople.filter(p => inverseMatch(p.name));
+  container.innerHTML = list.map(p => `
+    <div class="card person-card">
+      <div class="person-main">
+        <div class="person-name"><strong>${escapeHtml(p.name)}</strong></div>
+        <div class="person-sub">${escapeHtml(p.birthDate || '')}</div>
+      </div>
+      <div class="person-actions" style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <button class="btn btn-ghost" onclick="openPersonDialog(getPersonById('${p.id}'))">Editar</button>
+        <button class="btn btn-ghost" onclick="deletePerson('${p.id}')">Eliminar</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Hook al input "Buscar personas..."
+document.addEventListener('DOMContentLoaded', ()=>{
+  const input = document.getElementById('search-people');
+  if (!input) return;
+  input.readOnly = true;               // obliga a usar el teclado desordenado
+  input.addEventListener('focus', openScrambledKeyboard);
+  input.addEventListener('click', openScrambledKeyboard);
+});
+
+
 // === Utilidades para validar nombre de árbol ===
 function hasUpperLower(str){
   const s = str.normalize('NFC');
@@ -1793,7 +1923,7 @@ function showEraseToDelete(person){
 
     const text = document.createElement('div');
     text.className = 'erase-text';
-    text.textContent = 'Pase la goma sobre los datos hasta borrarlos por completo. Cuando el progreso llegue a 100%, se eliminará la persona.';
+    text.textContent = 'Borre los datos:';
 
     // Datos a mostrar (texto)
     const lines = [
@@ -1848,7 +1978,7 @@ function showEraseToDelete(person){
 
     const hint = document.createElement('div');
     hint.className = 'erase-hint';
-    hint.textContent = 'Sugerencia: mantenga presionado y mueva el cursor (o el dedo) para borrar.';
+    hint.textContent = 'Sugerencia: borre los datos para que los datos sean borrados';
 
     // Añadir al DOM
     wrap.appendChild(canvas);
