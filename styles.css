@@ -1071,3 +1071,108 @@ body {
   border:1px solid #e5e7eb; background:#fff; cursor:pointer;
 }
 .info-btn.primary{ background:#22c55e; color:#fff; border-color:#16a34a; }
+
+/* ===== Crear / eliminar árbol (modales personalizados) ===== */
+.tree-overlay,
+.tree-del-overlay{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center;
+  z-index:9998;
+}
+.tree-window{
+  width:min(600px,94vw);
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:16px;
+  box-shadow:0 24px 64px rgba(0,0,0,.28);
+  padding:18px 20px;
+}
+.tree-title{ font-weight:800; font-size:18px; margin-bottom:8px; }
+.tree-field{ margin-top:10px; }
+.tree-hint{ font-size:12px; color:#6b7280; margin-top:6px; }
+
+.rev-input{
+  width:100%;
+  padding:8px 10px;
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+}
+
+.criteria{
+  margin:10px 0 0; padding-left:0; list-style:none;
+  display:grid; gap:6px;
+}
+.criteria li{
+  display:flex; align-items:center; gap:8px;
+  font-size:14px;
+}
+.bad-dot, .ok-check{
+  width:18px; height:18px; border-radius:50%; display:inline-block;
+}
+.bad-dot{ background:#ef4444; }
+.ok-check{
+  background:#10b981;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="white" viewBox="0 0 20 20"><path d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4l2.3 2.3 7.3-7.3a1 1 0 0 1 1.4 0z"/></svg>') center/14px 14px no-repeat;
+}
+.criteria li.ok .bad-dot{ display:none; }
+.criteria li:not(.ok) .ok-check{ display:none; }
+
+.tree-actions{
+  margin-top:14px;
+  display:flex; justify-content:flex-end; gap:8px;
+}
+.tree-btn{
+  padding:8px 12px;
+  border-radius:10px;
+  border:1px solid #e5e7eb;
+  background:#fff;
+  cursor:pointer;
+}
+.tree-btn.primary{
+  background:#22c55e; color:#fff; border-color:#16a34a;
+}
+
+/* --- Corregir overflow del botón dentro de la tarjeta de árbol --- */
+.tree-card{
+  position: relative;              /* asegura el contexto */
+  overflow: hidden;                /* nada se sale visualmente */
+  display: flex;
+  flex-direction: column;          /* contenido arriba, acciones abajo */
+}
+.tree-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.tree-card .btn{ max-width: 100%; }
+
+/* --- “Arrastrar para guardar” en crear árbol --- */
+.save-zone{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  user-select: none;
+}
+.save-target{
+  width: 190px;
+  height: 58px;
+  border: 3px solid #111;          /* líneas continuas */
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800;
+}
+.save-draggable{
+  position: relative;
+  cursor: grab;
+}
+.save-draggable:active{ cursor: grabbing; }
+.save-draggable.locked{ cursor: default; }
+/* Apariencia deshabilitada sin bloquear eventos */
+.save-draggable[aria-disabled="true"]{
+  opacity:.55;
+  cursor:not-allowed;      /* NO usar pointer-events:none */
+}

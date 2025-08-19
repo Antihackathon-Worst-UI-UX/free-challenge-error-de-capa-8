@@ -220,6 +220,268 @@ function showInfoModal({ title="Aviso", text=".", okText="Entendido" }){
   });
 }
 
+// === Utilidades para validar nombre de árbol ===
+function hasUpperLower(str){
+  const s = str.normalize('NFC');
+  return /[A-ZÁÉÍÓÚÜÑ]/.test(s) && /[a-záéíóúüñ]/.test(s);
+}
+function letterCount(str){
+  const m = str.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g);
+  return m ? m.length : 0;
+}
+function isPrime(n){
+  if (n < 2) return false;
+  if (n % 2 === 0) return n === 2;
+  const r = Math.floor(Math.sqrt(n));
+  for (let i = 3; i <= r; i += 2) if (n % i === 0) return false;
+  return true;
+}
+function containsPalindromeMin(str, min = 3){
+  const letters = (str.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g) || []).join('').toLowerCase();
+  const n = letters.length;
+  for (let len = min; len <= n; len++){
+    for (let i = 0; i + len <= n; i++){
+      const s = letters.slice(i, i + len);
+      if (s === s.split('').reverse().join('')) return true;
+    }
+  }
+  return false;
+}
+function reverseExact(str){ return [...str].reverse().join(''); }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function openTreeCreateDialog(){
+  // Overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'tree-overlay';
+  overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
+
+  // Bloquear ESC/click fuera
+  const escBlocker = (e)=>{ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } };
+  document.addEventListener('keydown', escBlocker, true);
+  overlay.addEventListener('click',(e)=>{ if (e.target===overlay){ e.stopPropagation(); } }, true);
+
+  // Ventana
+  const box = document.createElement('div'); box.className = 'tree-window';
+  const title = document.createElement('div'); title.className = 'tree-title'; title.textContent = 'Crear nuevo árbol';
+
+  const field = document.createElement('div'); field.className = 'tree-field';
+  field.innerHTML = `
+    <label>Nombre del árbol</label>
+    <input id="tree-name-input" type="text" class="rev-input" placeholder="Ej: FamilIa aNa Pérez">
+    <ul class="criteria" id="tree-criteria" style="margin-top:10px;">
+      <li data-k="lenletters"><span class="bad-dot"></span><span class="ok-check"></span>Mínimo 6 letras</li>
+      <li data-k="cases"><span class="bad-dot"></span><span class="ok-check"></span>Mínimo una mayúscula y una minúscula</li>
+      <li data-k="pal"><span class="bad-dot"></span><span class="ok-check"></span>Contener un palíndromo (≥ 3 letras)</li>
+      <li data-k="space"><span class="bad-dot"></span><span class="ok-check"></span>Al menos un espacio</li>
+      <li data-k="prime"><span class="bad-dot"></span><span class="ok-check"></span>La longitud total es un número primo</li>
+    </ul>
+  `;
+
+  // Zona “Guardar”
+  const saveZone = document.createElement('div'); saveZone.className = 'save-zone';
+  saveZone.innerHTML = `
+    <div id="save-target" class="save-target">Guardar</div>
+    <button id="btn-save-tree" class="tree-btn primary save-draggable" aria-disabled="true">Guardar</button>
+  `;
+
+  // Acciones (solo Cancelar aquí)
+  const actions = document.createElement('div'); actions.className = 'tree-actions';
+  const btnCancel = document.createElement('button'); btnCancel.className='tree-btn'; btnCancel.textContent='Cancelar';
+  actions.appendChild(btnCancel);
+
+  box.appendChild(title);
+  box.appendChild(field);
+  box.appendChild(saveZone);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // ---- Validaciones
+  const input = document.getElementById('tree-name-input');
+  const critUl = document.getElementById('tree-criteria');
+  const btnSave = document.getElementById('btn-save-tree');
+  const drop = document.getElementById('save-target');
+
+  function setBtnDisabled(flag){
+    if (flag) btnSave.setAttribute('aria-disabled','true');
+    else btnSave.removeAttribute('aria-disabled');
+  }
+
+  function setItem(k, ok){
+    const li = critUl.querySelector(`li[data-k="${k}"]`);
+    if (li) li.classList.toggle('ok', !!ok);
+  }
+  function allValid(name){
+    const ok1 = letterCount(name) >= 6;
+    const ok2 = hasUpperLower(name);
+    const ok3 = containsPalindromeMin(name, 3);
+    const ok4 = /\s/.test(name);
+    const ok5 = isPrime(name.length);
+    setItem('lenletters', ok1);
+    setItem('cases', ok2);
+    setItem('pal', ok3);
+    setItem('space', ok4);
+    setItem('prime', ok5);
+    return ok1 && ok2 && ok3 && ok4 && ok5;
+  }
+
+  let unlocked = false; // se vuelve true al soltar el botón dentro del cuadrado
+
+  function updateEnabled(){
+    const ok = allValid(input.value);
+    setBtnDisabled(!(ok && unlocked));
+  }
+
+  input.addEventListener('input', updateEnabled);
+  setTimeout(updateEnabled, 0);
+
+  // ---- Drag del botón Guardar hacia el cuadrado Guardar
+  (function enableDragToSave(){
+    let dragging = false;
+    let startX = 0, startY = 0, offX = 0, offY = 0;
+    let prevParent = null, prevNext = null;
+
+    function onDown(e){
+      if (btnSave.classList.contains('locked')) return; // ya fijado
+      dragging = true;
+      const ev = e.touches ? e.touches[0] : e;
+      startX = ev.clientX;
+      startY = ev.clientY;
+
+      // Guardar posición DOM para restaurar si no cae en el target
+      prevParent = btnSave.parentNode;
+      prevNext = btnSave.nextSibling;
+
+      // Pasar a posición fija mientras se arrastra
+      const r = btnSave.getBoundingClientRect();
+      offX = ev.clientX - r.left;
+      offY = ev.clientY - r.top;
+      btnSave.style.position = 'fixed';
+      btnSave.style.left = (ev.clientX - offX) + 'px';
+      btnSave.style.top  = (ev.clientY - offY) + 'px';
+      btnSave.style.zIndex = 10000;
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+      document.addEventListener('touchmove', onMove, {passive:false});
+      document.addEventListener('touchend', onUp, true);
+      e.preventDefault();
+    }
+    function onMove(e){
+      if (!dragging) return;
+      const ev = e.touches ? e.touches[0] : e;
+      btnSave.style.left = (ev.clientX - offX) + 'px';
+      btnSave.style.top  = (ev.clientY - offY) + 'px';
+      if (e.cancelable) e.preventDefault();
+    }
+    function onUp(e){
+      if (!dragging) return;
+      dragging = false;
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      document.removeEventListener('touchmove', onMove, true);
+      document.removeEventListener('touchend', onUp, true);
+
+      // ¿Cayó dentro del cuadrado?
+      const b = btnSave.getBoundingClientRect();
+      const t = drop.getBoundingClientRect();
+      const cx = b.left + b.width/2;
+      const cy = b.top  + b.height/2;
+      const inside = (cx >= t.left && cx <= t.right && cy >= t.top && cy <= t.bottom);
+
+      // Reset estilos “fijos”
+      btnSave.style.position = '';
+      btnSave.style.left = '';
+      btnSave.style.top = '';
+      btnSave.style.zIndex = '';
+
+      if (inside){
+        // Colocar dentro del cuadrado y bloquear
+        drop.appendChild(btnSave);
+        btnSave.classList.add('locked');
+        unlocked = true;
+      } else {
+        // Volver a su sitio original
+        if (prevNext) prevParent.insertBefore(btnSave, prevNext);
+        else prevParent.appendChild(btnSave);
+        unlocked = false;
+      }
+      updateEnabled();
+    }
+
+    btnSave.addEventListener('mousedown', onDown);
+    btnSave.addEventListener('touchstart', onDown, {passive:false});
+  })();
+
+  // ---- Acciones
+  btnCancel.onclick = ()=>{
+    document.removeEventListener('keydown', escBlocker, true);
+    overlay.remove();
+  };
+
+  btnSave.onclick = ()=>{
+    if (btnSave.hasAttribute('aria-disabled')) return;
+
+    const name = input.value.trim();
+    const tree = {
+      id: (typeof genId === 'function') ? genId('t_') : ('t_' + Math.random().toString(36).slice(2,9)),
+      name,
+      people: [],
+      relationships: []
+    };
+    trees.push(tree);
+
+    if (typeof saveData === 'function') saveData();
+    if (typeof renderCurrentView === 'function') renderCurrentView();
+
+    document.removeEventListener('keydown', escBlocker, true);
+    overlay.remove();
+  };
+}
+
+function openTreeDeleteDialog(treeId){
+  const tree = trees.find(t => t.id === treeId);
+  if (!tree) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'tree-del-overlay';
+  overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
+
+  const escBlocker = (e)=>{ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } };
+  document.addEventListener('keydown', escBlocker, true);
+  overlay.addEventListener('click',(e)=>{ if (e.target===overlay){ e.stopPropagation(); } }, true);
+
+  const box = document.createElement('div'); box.className='tree-window';
+  const title = document.createElement('div'); title.className='tree-title'; title.textContent = 'Eliminar árbol';
+  const p = document.createElement('div'); p.className='tree-hint';
+  p.innerHTML = `Para eliminar <b>${escapeHtml(tree.name)}</b>, escriba el nombre <u>al revés</u> exactamente.`;
+
+  const input = document.createElement('input'); input.className='rev-input'; input.placeholder='Escriba aquí…';
+  const actions = document.createElement('div'); actions.className='tree-actions';
+  const btnCancel = document.createElement('button'); btnCancel.className='tree-btn'; btnCancel.textContent='Cancelar';
+  const btnDelete = document.createElement('button'); btnDelete.className='tree-btn primary'; btnDelete.textContent='Eliminar'; btnDelete.disabled = true;
+  actions.appendChild(btnCancel); actions.appendChild(btnDelete);
+
+  box.appendChild(title); box.appendChild(p); box.appendChild(input); box.appendChild(actions);
+  overlay.appendChild(box); document.body.appendChild(overlay);
+
+  const target = reverseExact(tree.name); // coincidencia exacta (incluye espacios, tildes, mayúsculas)
+  input.addEventListener('input', ()=>{ btnDelete.disabled = (input.value !== target); });
+
+  btnCancel.onclick = ()=>{ document.removeEventListener('keydown', escBlocker, true); overlay.remove(); };
+
+  btnDelete.onclick = ()=>{
+    trees = trees.filter(t => t.id !== treeId);
+    if (currentTree && currentTree.id === treeId) currentTree = null;
+
+    if (typeof saveData === 'function') saveData();
+    if (typeof renderCurrentView === 'function') renderCurrentView();
+
+    document.removeEventListener('keydown', escBlocker, true);
+    overlay.remove();
+  };
+}
+
 function placeButtonsRandom(container, buttons) {
   const c = container.getBoundingClientRect();
   const pad = 6;
@@ -1667,7 +1929,7 @@ function showEraseToDelete(person){
       const erasedRatio = Math.min(1, Math.max(0, 1 - (opaque / initialOpaque || 1)));
       progressBar.style.width = (erasedRatio*100).toFixed(1) + '%';
 
-      if (erasedRatio >= 0.99) {
+      if (erasedRatio >= 0.95) {
         // Borrado suficiente → eliminar
         teardown(true);
       }
@@ -1716,47 +1978,31 @@ async function deletePerson(personId) {
 
 // Trees management
 function renderTrees() {
-  const container = document.getElementById("trees-grid")
+  const container = document.getElementById("trees-grid");
+  if (!container) return;
 
-  container.innerHTML = trees
-    .map(
-      (tree) => `
-        <div class="card tree-card">
-            <div class="tree-info">
-                <div class="tree-icon">🌳</div>
-                <div class="tree-details">
-                    <h3>${tree.name}</h3>
-                    <div class="tree-stats">
-                        ${tree.people.length} personas, ${tree.relationships.length} relaciones
-                    </div>
-                </div>
-            </div>
-            <button class="btn btn-ghost" onclick="viewTree('${tree.id}')">
-                → Ver Árbol
-            </button>
+  container.innerHTML = trees.map((tree) => `
+    <div class="card tree-card">
+      <div class="tree-info">
+        <div class="tree-icon">🌳</div>
+        <div class="tree-details">
+          <h3>${escapeHtml(tree.name)}</h3>
+          <div class="tree-stats">
+            ${tree.people.length} personas, ${tree.relationships.length} relaciones
+          </div>
         </div>
-    `,
-    )
-    .join("")
+      </div>
+
+      <div class="tree-actions" style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <button class="btn btn-ghost" onclick="viewTree('${tree.id}')">→ Ver Árbol</button>
+        <button class="btn btn-ghost" onclick="openTreeDeleteDialog('${tree.id}')">🗑️ Eliminar</button>
+      </div>
+    </div>
+  `).join("");
 }
 
 function createNewTree() {
-  const nameInput = document.getElementById("new-tree-name")
-  const name = nameInput.value.trim()
-
-  if (!name) return
-
-  const newTree = {
-    id: Date.now().toString(),
-    name: name,
-    people: [],
-    relationships: [],
-  }
-
-  trees.push(newTree)
-  nameInput.value = ""
-  saveData()
-  renderTrees()
+  openTreeCreateDialog();
 }
 
 function viewTree(treeId) {
