@@ -20,7 +20,7 @@ Tu objetivo será crear una Interfaz Grafica absurdamente incomoda, frustrante y
 
 ## Entrega ✅
 - Este repositorio será revisado por los jueces al termino de la competencia: *Martes 19 Agosto - 23:59*
-- Link Deploy = [Remplazar por el link donde tenga hosteada su UI]
+- Link Deploy = [https://agustinbc7.github.io/free-challenge-error-de-capa-8/]
 
 ---
 
